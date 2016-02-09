@@ -39,15 +39,18 @@ var transformMatrix = [
 
 /* Game setup? */
 var map = new Map();
-map.linedefs.push(new Linedef(new Vertex(2, 2),      new Vertex(2, 0)));
-map.linedefs.push(new Linedef(new Vertex(2, 2),      new Vertex(0, 2)));
-map.linedefs.push(new Linedef(new Vertex(0, 2),      new Vertex(-0.5, 2.5)));
-map.linedefs.push(new Linedef(new Vertex(-0.5, 2.5), new Vertex(-3.5, 0)));
-map.linedefs.push(new Linedef(new Vertex(-3.0, 0),   new Vertex(-6, -6)));
-map.linedefs.push(new Linedef(new Vertex(-6, -6),    new Vertex(3, -2)));
-map.linedefs.push(new Linedef(new Vertex(3, -2),     new Vertex(2, 0)));
+map.linedefs.push(new Linedef(new Vertex(-2,  2), new Vertex(-2, -2), 1));
+map.linedefs.push(new Linedef(new Vertex(-2,  2), new Vertex( 2,  2), 1.2));
+map.linedefs.push(new Linedef(new Vertex( 2,  2), new Vertex( 2, -2), 1.4));
+map.linedefs.push(new Linedef(new Vertex( 2, -2), new Vertex(-2, -2), 2.2));
 
+var screen = {
+  width: 320,
+  height: 200
+};
 var player = new Player();
+var fov = 90;
+var cameraPlane = new Vec2(0, Math.tan(deg2rad(fov) / 2));
 
 requestAnimationFrame(render);
 
@@ -81,21 +84,29 @@ function canvasLoop(e) {
   movementX /= 20;
   movementY /= 100;
 
-  // move camera and player!
-  player.cameraVector.direction += movementX;
+  // rotate camera
+  var oldDirection = new Vec2(player.direction.x, player.direction.y);
+  player.direction.x = oldDirection.x * Math.cos(-movementX) - oldDirection.y * Math.sin(-movementX);
+  player.direction.y = oldDirection.x * Math.sin(-movementX) + oldDirection.y * Math.cos(-movementX);
 
-  var ray = createRay(player.position.x, player.position.y, movementY > 0 ? player.cameraVector.direction : (player.cameraVector.direction + 180) % 360);
+  // rotate camera plane
+  var oldCameraPlane = new Vec2(cameraPlane.x, cameraPlane.y);
+  cameraPlane.x = oldCameraPlane.x * Math.cos(-movementX) - oldCameraPlane.y * Math.sin(-movementX);
+  cameraPlane.y = oldCameraPlane.x * Math.sin(-movementX) + oldCameraPlane.y * Math.cos(-movementX);
 
-  castRayAgainstLineDefs(ray, map.linedefs, false, function(intersect){
-    var dist = getDistance(intersect.x, intersect.y, ray.x1, ray.y1);
+  var ray = movementY > 0 ? player.direction : new Vec2(-player.direction.x, -player.direction.y);
+
+  castRayAgainstLineDefs(player.position, ray, map.linedefs, false, function(intersect){
+    var dist = getDistance(intersect.x, intersect.y, ray.x, ray.y);
 
     if ((movementY > 0 && dist - movementY < 0.5) || (movementY < 0 && dist + movementY < 0.5)) {
       movementY = 0;
     }
   });
 
-  player.position.x = player.position.x + Math.cos(player.cameraVector.direction * (Math.PI/180)) * movementY;
-  player.position.y = player.position.y + Math.sin(player.cameraVector.direction * (Math.PI/180)) * movementY;
+  // move player
+  player.position.x = player.position.x + player.direction.x * movementY;
+  player.position.y = player.position.y + player.direction.y * movementY;
 }
 
 
@@ -248,30 +259,33 @@ function renderCols(gl, cols) {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 
   // fill the texture with a lot of pixel junk
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 320, 200, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, screen.width, screen.height, 0, gl.RGBA, gl.UNSIGNED_BYTE,
     new Uint8Array(getColPixels(cols)));
 }
 
 function getColPixels(cols) {
   var pixels = [];
 
-  for (var r = 0; r < 200; r++) {
+  for (var r = 0; r < screen.height; r++) {
     for (var i = 0; i < cols.length; i++) {
       var col = cols[i];
 
       if (col) {
         // a zero-dist wall should take the whole column.
         // father walls, take less.
-        var size = 200 / col;
+        var size = screen.height / col.dist;
 
         // the wall takes up space in the center
-        var wallBottom = (200 / 2) - (size / 2);
-        var wallTop    = (200 / 2) + (size / 2);
+        var wallBottom =  (-size / 2) + (screen.height / 2);
+        var wallTop    =  wallBottom + size * col.relativeHeight;
 
         if (r >= wallBottom && r <= wallTop) {
-          pixels.push(255);
-          pixels.push(255);
-          pixels.push(255);
+          // hobo texture is go
+          var hobo = lintop(wallBottom, 20, wallTop, 200, r);
+
+          pixels.push(hobo >>> 0);
+          pixels.push(hobo >>> 0);
+          pixels.push(hobo >>> 0);
           pixels.push(255);
         } else {
           pixels.push(255);
@@ -293,14 +307,8 @@ function getColPixels(cols) {
 
 /* Player stuff */
 function Player() {
-  this.position = {
-    x: 0,
-    y: 0
-  };
-
-  this.cameraVector = {
-    direction: 45
-  };
+  this.position = new Vec2(0, 0);
+  this.direction = new Vec2(-1, 0);
 }
 
 /* Map stuff */
@@ -309,17 +317,20 @@ function Map() {
   this.linedefs = [];
 }
 
+function Vec2(x, y) {
+  this.x = x;
+  this.y = y;
+}
+
 function Vertex(x, y) {
   this.x = x;
   this.y = y;
 }
 
-function Linedef(vert1, vert2) {
+function Linedef(vert1, vert2, height) {
   this.vert1 = vert1;
   this.vert2 = vert2;
-
-  // hardcoded wall for now
-  this.height = 20;
+  this.height = height;
 }
 
 /* Map render? */
@@ -327,56 +338,82 @@ function renderPlayerView(player, map) {
   // somehow we do stuff here...
   // to render pseudo-3d to the screen. yikes.
 
-  var fov = 90;
   var cols = [];
 
-  for (var i = player.cameraVector.direction - (fov / 2); i < player.cameraVector.direction + (fov / 2); i += (fov/320)) {
-    var ray = createRay(player.position.x, player.position.y, i);
+  // loop over screen space in the x direction
+  for (var x = 0; x < screen.width; x++) {
+    // constrain coordinate to camera space (-1, 1)
+    var cameraX = ((2 * x) / screen.width) - 1;
+    var rayDirection = new Vec2(
+      player.direction.x + cameraPlane.x * cameraX,
+      player.direction.y + cameraPlane.y * cameraX
+    );
+    var rayPosition = new Vec2(
+      player.position.x,
+      player.position.y
+    );
+
+    var rayLongdirection = new Vec2(rayDirection.x, rayDirection.y);
     var dist = null;
+    var height = null;
 
-    castRayAgainstLineDefs(ray, map.linedefs, false, function(intersect){
-      dist = getDistance(intersect.x, intersect.y, ray.x1, ray.y1);
+    castRayAgainstLineDefs(rayPosition, rayLongdirection, map.linedefs, false, function(intersect, linedef){
+      var stepX = rayDirection.x < 0 ? 1 : 1;
+      var stepY = rayDirection.y < 0 ? 1 : 1;
 
-      // get distance relative to the camera plane
+      var ydist = Math.abs((intersect.y - rayPosition.y + (1 - stepY) / 2) / rayDirection.y);
+      var xdist = Math.abs((intersect.x - rayPosition.x + (1 - stepX) / 2) / rayDirection.x);
 
-      // this is a little messed up right now
-      // dist = dist * Math.cos((player.cameraVector.direction - i) * (Math.PI/180));
-      dist = dist;
+      dist = xdist || ydist;
+      height = linedef.height;
     });
 
-    cols.push(dist);
+    cols.push({
+      dist: dist,
+      relativeHeight: height
+    });
   }
 
   return cols;
 }
 
-function castRayAgainstLineDefs(ray, linedefs, testAll, callback) {
-  for (var j = 0; j < linedefs.length; j++) {
-    var linedef = linedefs[j];
-    var intersect = getLineIntersection(ray.x1, ray.y1, ray.x2, ray.y2, linedef.vert1.x, linedef.vert1.y, linedef.vert2.x, linedef.vert2.y);
+// casts a ray for a certain distance before giving up.
+function castRayAgainstLineDefs(position, direction, linedefs, testAll, callback) {
+  var intersect = null;
+  var iter = 0;
+  var nextPosition = new Vec2(position.x, position.y);
+  var nextDirection = new Vec2(direction.x / 10, direction.y / 10);
 
-    if (intersect) {
-      callback(intersect);
-      if (!testAll) {
-        break;
+  // bsp would be very useful here...
+
+  // junk algorithm. ray cast in chunks until we hit a segment or a max
+  // testing range.
+  while (!intersect && iter++ < 100) {
+    for (var j = 0; j < linedefs.length; j++) {
+      var linedef = linedefs[j];
+
+      intersect = getLineIntersection(
+        nextPosition.x,
+        nextPosition.y,
+        nextPosition.x + nextDirection.x,
+        nextPosition.y + nextDirection.y,
+        linedef.vert1.x,
+        linedef.vert1.y,
+        linedef.vert2.x,
+        linedef.vert2.y
+      );
+
+      if (intersect) {
+        callback(intersect, linedef);
+
+        if (!testAll) {
+          break;
+        }
       }
     }
+
+    nextPosition = new Vec2(nextPosition.x + nextDirection.x, nextPosition.y + nextDirection.y);
   }
-}
-
-function createRay(x, y, angle, size) {
-  size = size || 1000;
-
-  var rad = angle * (Math.PI/180);
-  var ix = x + Math.cos(rad) * size;
-  var iy = y + Math.sin(rad) * size;
-
-  return {
-    x1: x,
-    y1: y,
-    x2: ix,
-    y2: iy
-  };
 }
 
 function getDistance(x1, y1, x2, y2) {
@@ -408,4 +445,12 @@ function getLineIntersection(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y) {
   }
 
   return false;
+}
+
+function deg2rad(d) {
+  return d * (Math.PI/180);
+}
+
+function lintop(x1, y1, x2, y2, t) {
+  return y1 + (y2 - y1) * ((t - x1) / (x2 - x1));
 }
