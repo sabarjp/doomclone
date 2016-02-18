@@ -39,10 +39,7 @@ var transformMatrix = [
 
 /* Game setup? */
 var map = new Map();
-map.linedefs.push(new Linedef(new Vertex(-2,  2), new Vertex(-2, -2), 1));
-map.linedefs.push(new Linedef(new Vertex(-2,  2), new Vertex( 2,  2), 1.2));
-map.linedefs.push(new Linedef(new Vertex( 2,  2), new Vertex( 2, -2), 1.4));
-map.linedefs.push(new Linedef(new Vertex( 2, -2), new Vertex(-2, -2), 2.2));
+map.load([-1,-1,-1,2,1,0,0,0,-1,2,2,2,1,0,0,0,2,-1,2,2,1,0,0,0,2,-1,3,-3,1,0,0,0,-1,-1,-2,-3,1,0,0,0,3,-3,4,-4,1,0,0,0,-2,-3,-3,-4,1,0,0,0,-3,-4,-3,-9,1,0,0,0,4,-4,4,-9,1,0,0,0,-3,-9,-1,-10,1,0,0,0,4,-9,2,-10,1,0,0,0,2,-10,3,-13,1,0,0,0,-1,-10,-2,-13,1,0,0,0,3,-13,6,-13,1,0,0,0,6,-13,6,-15,1,0,0,0,-2,-13,-4,-13,1,0,0,0,-4,-13,-4,-15,1,0,0,0,6,-15,8,-17,1,0,0,0,8,-17,8,-19,1,0,0,0,8,-19,6,-21,1,0,0,0,6,-22,6,-21,1,0,0,0,-4,-15,-5,-17,1,0,0,0,-5,-17,-5,-20,1,0,0,0,4,-22,-5,-22,1,0,0,0,4,-22,6,-22,1,0,0,0,-5,-22,-9,-24,1,0,0,0,-5,-20,-10,-22,1,0,0,0,-9,-24,-10,-26,1,0,0,0,-10,-22,-12,-25,1,0,0,0,-10,-26,-10,-28,1,0,0,0,-12,-28,-12,-25,1,0,0,0,-12,-28,-15,-28,1,0,0,0,-15,-28,-15,-37,1,0,0,0,-10,-28,-6,-28,1,0,0,0,-6,-28,-6,-37,1,0,0,0,-15,-37,-9,-37,1,0,0,0,-6,-37,-7,-37,1,0,0,0,-9,-37,-9,-38,1,0,0,0,-9,-38,-8,-39,1,0,0,0,-8,-39,-3,-40,1,0,0,0,-7,-37,-5,-38,1,0,0,0,-5,-38,-3,-39,1,0,0,0,-3,-39,-2,-39,1,0,0,0,-2,-39,-2,-37,1,0,0,0,-3,-40,6,-40,1,0,0,0,-2,-37,0,-38,1,0,0,0,6,-40,2,-35,1,0,0,0,0,-38,2,-38,1,0,0,0,2,-38,0,-33,1,0,0,0,2,-35,6,-37,1,0,0,0,0,-33,5,-35,1,0,0,0,5,-35,4,-32,1,0,0,0,6,-37,6,-31,1,0,0,0,4,-32,5,-30,1,0,0,0,5,-30,5,-27,1,0,0,0,6,-31,10,-31,1,0,0,0,5,-27,4,-26,1,0,0,0,10,-31,11,-32,1,0,0,0,4,-26,5,-25,1,0,0,0,5,-25,6,-26,1,0,0,0,11,-32,12,-31,1,0,0,0,12,-31,11,-30,1,0,0,0,6,-26,8,-25,1,0,0,0,11,-30,11,-26,1,0,0,0,11,-26,9,-28,1,0,0,0,9,-28,8,-25,1,0,0,0]);
 
 var screen = {
   width: 320,
@@ -280,24 +277,46 @@ function getColPixels(cols) {
         var wallTop    =  wallBottom + size * col.relativeHeight;
 
         if (r >= wallBottom && r <= wallTop) {
-          // hobo texture is go
-          var hobo = lintop(wallBottom, 20, wallTop, 200, r);
+          var offset = col.lineDirection == 'x' ? 35 : 0;
+          var varLighting = Math.max(0.04, lintop(0, 1.0, 6, 0.0, col.dist));
+          var hoboTexture = varLighting * lintop(wallBottom, 20+offset, wallTop, 200+offset, r);
 
-          pixels.push(hobo >>> 0);
-          pixels.push(hobo >>> 0);
-          pixels.push(hobo >>> 0);
+
+          pixels.push(hoboTexture >>> 0);
+          pixels.push(hoboTexture >>> 0);
+          pixels.push(hoboTexture >>> 0);
           pixels.push(255);
         } else {
-          pixels.push(255);
-          pixels.push(0);
-          pixels.push(0);
-          pixels.push(255);
+          if (r < screen.height / 2) {
+            // try to calc imaginary pixels?
+            var imDist = screen.height / (screen.height/2 - r + 1);
+            var imVarLighting = Math.max(0, lintop(0, 0.8, 6, 0.0, imDist));
+            pixels.push(imVarLighting * 255);
+            pixels.push(0);
+            pixels.push(0);
+            pixels.push(255);
+          } else {
+            // try to calc imaginary pixels... again!?
+            var imDist = screen.height / (r - screen.height/2 + 1);
+            var imVarLighting = Math.max(0, lintop(0, 0.8, 6, 0.0, imDist));
+            pixels.push(0);
+            pixels.push(0);
+            pixels.push(imVarLighting * 255);
+            pixels.push(255);
+          }
         }
       } else {
-        pixels.push(255);
-        pixels.push(0);
-        pixels.push(0);
-        pixels.push(255);
+        if (r < screen.height / 2) {
+          pixels.push(255);
+          pixels.push(0);
+          pixels.push(0);
+          pixels.push(255);
+        } else {
+          pixels.push(0);
+          pixels.push(0);
+          pixels.push(255);
+          pixels.push(255);
+        }
       }
     }
   }
@@ -315,6 +334,12 @@ function Player() {
 
 function Map() {
   this.linedefs = [];
+
+  this.load = function(arr) {
+    for(var i=0; i<arr.length; i+=8) {
+      this.linedefs.push(new Linedef(new Vertex(arr[i], arr[i+1]), new Vertex(arr[i+2], arr[i+3]), arr[i+4]));
+    }
+  };
 }
 
 function Vec2(x, y) {
@@ -356,6 +381,7 @@ function renderPlayerView(player, map) {
     var rayLongdirection = new Vec2(rayDirection.x, rayDirection.y);
     var dist = null;
     var height = null;
+    var lineDirection = null;
 
     castRayAgainstLineDefs(rayPosition, rayLongdirection, map.linedefs, false, function(intersect, linedef){
       var stepX = rayDirection.x < 0 ? 1 : 1;
@@ -366,11 +392,20 @@ function renderPlayerView(player, map) {
 
       dist = xdist || ydist;
       height = linedef.height;
+
+      if (Math.abs(linedef.vert2.x - linedef.vert1.x) > Math.abs(linedef.vert2.y - linedef.vert1.y)) {
+        lineDirection = 'x';
+      } else {
+        lineDirection = 'y';
+      }
+
+
     });
 
     cols.push({
       dist: dist,
-      relativeHeight: height
+      relativeHeight: height,
+      lineDirection: lineDirection
     });
   }
 
@@ -382,13 +417,13 @@ function castRayAgainstLineDefs(position, direction, linedefs, testAll, callback
   var intersect = null;
   var iter = 0;
   var nextPosition = new Vec2(position.x, position.y);
-  var nextDirection = new Vec2(direction.x / 10, direction.y / 10);
+  var nextDirection = new Vec2(direction.x / 5, direction.y / 5);
 
   // bsp would be very useful here...
 
   // junk algorithm. ray cast in chunks until we hit a segment or a max
   // testing range.
-  while (!intersect && iter++ < 100) {
+  while (!intersect && iter++ < 180) {
     for (var j = 0; j < linedefs.length; j++) {
       var linedef = linedefs[j];
 
@@ -451,6 +486,7 @@ function deg2rad(d) {
   return d * (Math.PI/180);
 }
 
+// linear interpolation
 function lintop(x1, y1, x2, y2, t) {
   return y1 + (y2 - y1) * ((t - x1) / (x2 - x1));
 }
